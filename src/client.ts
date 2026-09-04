@@ -154,6 +154,37 @@ export class CrifineClient {
     });
   }
 
+  /**
+   * Every pool, following the cursor.
+   *
+   * An async iterator rather than a method that returns everything: a caller
+   * looking for one venue should not pay for pages it will discard, and on a
+   * priced API "fetch all of it" is a decision worth making explicitly.
+   */
+  async *allPools(filter: { chain?: string; venue?: string; kind?: string } = {}): AsyncGenerator<Pool> {
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+
+    do {
+      const page: { data: Pool[]; next_cursor: string | null } = await this.#get(
+        this.#baseUrl,
+        "/pools",
+        { ...filter, cursor },
+      );
+
+      for (const pool of page.data) yield pool;
+
+      // A server that returns its own cursor back would loop forever; stop
+      // rather than paginate in place until someone notices the bill.
+      const next = page.next_cursor ?? undefined;
+      if (next !== undefined && seen.has(next)) {
+        throw new CrifineError("pagination cursor repeated — refusing to loop", 500);
+      }
+      if (next !== undefined) seen.add(next);
+      cursor = next;
+    } while (cursor !== undefined);
+  }
+
   /** Free and keyless — no payment wrapper needed. */
   fragility(): Promise<{ as_of: string; method_version: string; rows: FragilityRow[] }> {
     return this.#get(this.#evidenceBaseUrl, "/fragility");

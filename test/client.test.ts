@@ -123,3 +123,67 @@ test("a 402 is never retried — payment belongs to the injected fetch", async (
   await assert.rejects(() => client.exit("aave-v3-weth", 1000));
   assert.equal(attempts, 1, "retrying a 402 blind is how an agent pays twice");
 });
+
+test("allPools follows the cursor to the end", async () => {
+  const pages = [
+    { data: [{ pool: "a" }, { pool: "b" }], next_cursor: "c1" },
+    { data: [{ pool: "c" }], next_cursor: null },
+  ];
+  let call = 0;
+
+  const client = new CrifineClient({
+    fetch: async () => Response.json(pages[call++]),
+  });
+
+  const seen: string[] = [];
+  for await (const pool of client.allPools()) seen.push(pool.pool);
+
+  assert.deepEqual(seen, ["a", "b", "c"]);
+  assert.equal(call, 2);
+});
+
+test("allPools passes the cursor back on the next request", async () => {
+  const cursors: (string | null)[] = [];
+  let call = 0;
+
+  const client = new CrifineClient({
+    fetch: async (input) => {
+      cursors.push(new URL(String(input)).searchParams.get("cursor"));
+      return Response.json(
+        call++ === 0
+          ? { data: [{ pool: "a" }], next_cursor: "next-page" }
+          : { data: [], next_cursor: null },
+      );
+    },
+  });
+
+  for await (const _ of client.allPools()) { /* drain */ }
+  assert.deepEqual(cursors, [null, "next-page"]);
+});
+
+test("a repeated cursor is refused rather than paginated forever", async () => {
+  // On a priced API, a server that echoes its own cursor would bill the caller
+  // once per loop until someone noticed.
+  const client = new CrifineClient({
+    fetch: async () => Response.json({ data: [{ pool: "a" }], next_cursor: "same" }),
+  });
+
+  await assert.rejects(async () => {
+    for await (const _ of client.allPools()) { /* drain */ }
+  }, /refusing to loop/);
+});
+
+test("allPools stops immediately on an empty first page", async () => {
+  let call = 0;
+  const client = new CrifineClient({
+    fetch: async () => {
+      call++;
+      return Response.json({ data: [], next_cursor: null });
+    },
+  });
+
+  const seen = [];
+  for await (const pool of client.allPools()) seen.push(pool);
+  assert.equal(seen.length, 0);
+  assert.equal(call, 1);
+});
