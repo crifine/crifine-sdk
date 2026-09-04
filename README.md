@@ -66,6 +66,31 @@ result.exceedsBook;  // true = past the edge of the data, not a price
 Pure function: no network, no clock, no hidden configuration. Same inputs,
 same number, anywhere.
 
+### How much can I actually move?
+
+```ts
+import { maxSizeFor } from "@crifine/sdk/ladder";
+
+maxSizeFor(levels, 4820, -2);  // largest size that clears within 2%
+```
+
+The inverse of the walk, and usually the question that comes first. It never
+returns a size past the observed book — an answer that needs unmeasured depth
+is not an answer.
+
+### Check a ladder before trusting it
+
+```ts
+import { validateLadder, fromCumulative } from "@crifine/sdk/ladder";
+
+validateLadder(levels);  // [] when the ladder is usable
+```
+
+The failure this catches is the quiet one: cumulative figures passed in as
+incremental. Nothing throws, every number looks plausible, and the book appears
+several times deeper than it is — an error in the exact direction that gets
+someone hurt.
+
 ### Two things the method insists on
 
 - **Size is required.** There is no such thing as *the* fill price, only a fill
@@ -73,6 +98,20 @@ same number, anywhere.
 - **Past the book is flagged, not extrapolated.** When a size exceeds the whole
   observed book, `exceedsBook` is `true` and the remainder is charged at a
   penalty rate. Treat that result as *"we do not know"*, not as a price.
+
+## Decide what to do about it
+
+```ts
+import { decide, blocks } from "@crifine/sdk/policy";
+
+const decision = decide(estimate, { maxGapPct: -2, minDaysObserved: 30 });
+decision.action;  // "proceed" | "resize" | "hold" | "defer" | "refuse"
+```
+
+Every agent writes this branch. Writing it once means the **ordering** is
+settled once — and the ordering is the part people get wrong. A size past the
+edge of the book refuses before the gap is even considered: unmeasured is not a
+kind of expensive.
 
 ## Derivations, also in the open
 
@@ -101,6 +140,12 @@ const crifine = new CrifineClient();
 
 const estimate = await crifine.exit("aave-v3-weth", 5_000_000);
 const evidence = await crifine.evidence("aave-v3-weth"); // free, keyless
+
+// Paging is an explicit choice: on a priced API, "fetch all of it" is a
+// decision, not a convenience.
+for await (const pool of crifine.allPools({ chain: "ethereum" })) {
+  console.log(pool.pool);
+}
 ```
 
 Payment is **injected, not bundled** — pass any `fetch`, including one wrapped
@@ -140,7 +185,7 @@ for what actually shipped — if it is not there, it is not live.
 
 ```bash
 pnpm install
-pnpm test        # 41 tests, including the ones that must fail to pass
+pnpm test        # 75 tests, including the ones that must fail to pass
 pnpm typecheck
 pnpm build
 ```
