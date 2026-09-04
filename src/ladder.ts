@@ -207,3 +207,68 @@ export function maxSizeFor(
     ? rounded
     : 0;
 }
+
+/** A problem that makes a ladder unusable, or usable but misleading. */
+export type LadderProblem = {
+  level?: number;
+  message: string;
+};
+
+/**
+ * Check a ladder before trusting it.
+ *
+ * The failure this exists to catch is the quiet one: a cumulative ladder fed in
+ * as if it were incremental. Nothing throws, every number looks plausible, and
+ * the book appears several times deeper than it is — an error in the exact
+ * direction that gets someone hurt. Cumulative data is detectable because its
+ * levels never decrease across a long run, which a real book essentially never
+ * does as it moves away from mid.
+ */
+export function validateLadder(levels: readonly LadderLevel[]): LadderProblem[] {
+  const problems: LadderProblem[] = [];
+
+  if (levels.length === 0) {
+    return [{ message: "ladder has no levels" }];
+  }
+
+  levels.forEach((level, index) => {
+    if (!Number.isFinite(level.bps) || level.bps <= 0) {
+      problems.push({ level: index, message: `bps must be a positive number, got ${level.bps}` });
+    }
+    if (!Number.isFinite(level.usd) || level.usd < 0) {
+      problems.push({ level: index, message: `usd must be zero or more, got ${level.usd}` });
+    }
+    if (index > 0 && level.bps <= levels[index - 1]!.bps) {
+      problems.push({
+        level: index,
+        message: `bps must increase away from mid; ${level.bps} follows ${levels[index - 1]!.bps}`,
+      });
+    }
+  });
+
+  // Monotonically non-decreasing depth across four or more bands is the
+  // signature of cumulative figures. Two or three could be a real book.
+  if (levels.length >= 4) {
+    const nonDecreasing = levels.every(
+      (level, index) => index === 0 || level.usd >= levels[index - 1]!.usd,
+    );
+    if (nonDecreasing) {
+      problems.push({
+        message:
+          "depth never decreases across the whole ladder, which usually means cumulative figures were passed as incremental — run them through fromCumulative first, or the book will look several times deeper than it is",
+      });
+    }
+  }
+
+  return problems;
+}
+
+/** Convenience for callers that would rather fail than proceed on a bad ladder. */
+export function assertLadder(levels: readonly LadderLevel[]): void {
+  const problems = validateLadder(levels);
+  if (problems.length > 0) {
+    throw new RangeError(
+      `unusable depth ladder: ${problems.map((problem) => problem.message).join("; ")}`,
+    );
+  }
+}
