@@ -152,3 +152,58 @@ export function slippageCurve(
     result: walkLadder(levels, oraclePrice, sizeUsd, options),
   }));
 }
+
+/**
+ * The inverse question: how much can I move before it costs me more than X?
+ *
+ * `walkLadder` answers "what does this size cost". This answers the question
+ * people actually ask first — and the one that decides whether an order gets
+ * sent at all. Binary search over the ladder rather than a closed form, because
+ * the session penalty and the tail penalty make the curve piecewise and
+ * non-invertible.
+ *
+ * Returns `0` when even the smallest meaningful size breaches the limit, and
+ * never returns a size past the observed book: an answer that requires
+ * unmeasured depth is not an answer.
+ */
+export function maxSizeFor(
+  levels: readonly LadderLevel[],
+  oraclePrice: number,
+  maxGapPct: number,
+  options: WalkOptions & { /** Rounding granularity in USD. Default 1000. */ step?: number } = {},
+): number {
+  if (!(maxGapPct < 0)) {
+    throw new RangeError("maxGapPct must be negative — every size clears at some cost");
+  }
+
+  const ceiling = bookDepth(levels);
+  if (ceiling <= 0) return 0;
+
+  const step = Math.max(1, options.step ?? 1000);
+
+  // The whole book is affordable, so there is nothing to search for.
+  if (walkLadder(levels, oraclePrice, ceiling, options).exitGapPct >= maxGapPct) {
+    return ceiling;
+  }
+
+  let low = 0;
+  let high = ceiling;
+
+  // 40 iterations resolves any book to well under a dollar; the step rounding
+  // below is what actually decides the precision.
+  for (let i = 0; i < 40 && high - low > step; i++) {
+    const mid = (low + high) / 2;
+    if (walkLadder(levels, oraclePrice, mid, options).exitGapPct >= maxGapPct) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  const rounded = Math.floor(low / step) * step;
+
+  // Rounding must never round *up* into a breach.
+  return rounded > 0 && walkLadder(levels, oraclePrice, rounded, options).exitGapPct >= maxGapPct
+    ? rounded
+    : 0;
+}
