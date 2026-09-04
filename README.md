@@ -91,6 +91,20 @@ incremental. Nothing throws, every number looks plausible, and the book appears
 several times deeper than it is — an error in the exact direction that gets
 someone hurt.
 
+### Several orders against one book
+
+```ts
+import { simulateOrders } from "@crifine/sdk/ladder";
+
+const { fills, blendedGapPct } = simulateOrders(levels, 4820, [500_000, 500_000, 500_000]);
+```
+
+Every other estimate here answers for a single order against an untouched book.
+Real execution is rarely that — a rebalance sends three orders, a cascade sends
+many, and **each one pays for the ones before it**. Quoting the legs
+independently prices every order as if it were first, which is the flattering
+version and the one that surprises people at settlement.
+
 ### Two things the method insists on
 
 - **Size is required.** There is no such thing as *the* fill price, only a fill
@@ -185,7 +199,7 @@ for what actually shipped — if it is not there, it is not live.
 
 ```bash
 pnpm install
-pnpm test        # 75 tests, including the ones that must fail to pass
+pnpm test        # 84 tests, including the ones that must fail to pass
 pnpm typecheck
 pnpm build
 ```
