@@ -1,0 +1,46 @@
+{
+  "name": "@crifine/sdk",
+  "version": "0.1.0",
+  "description": "Types, the published measurement method, and an independent verifier for Crifine execution estimates.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.js",
+    "./ladder": "./dist/ladder.js",
+    "./derive": "./dist/derive.js",
+    "./format": "./dist/format.js",
+    "./verify": "./dist/verify.js",
+    "./client": "./dist/client.js",
+    "./policy": "./dist/policy.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "defi",
+    "execution",
+    "slippage",
+    "market-depth",
+    "x402",
+    "agents"
+  ],
+  "packageManager": "pnpm@11.8.0"
+}
