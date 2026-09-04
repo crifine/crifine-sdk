@@ -272,3 +272,80 @@ export function assertLadder(levels: readonly LadderLevel[]): void {
     );
   }
 }
+
+/** One fill in a sequence, and what the book looked like by the time it ran. */
+export type SimulatedFill = {
+  sizeUsd: number;
+  realizedPriceEst: number;
+  exitGapPct: number;
+  exceedsBook: boolean;
+  /** Depth still resting when this order started. */
+  depthBeforeUsd: number;
+  /** How much of this order the remaining book could absorb. */
+  filledUsd: number;
+};
+
+/**
+ * Several orders against one book, in sequence.
+ *
+ * Every estimate elsewhere in this package answers for a single order against
+ * an untouched book. Real execution is rarely that: a rebalance sends three
+ * orders, a liquidation cascade sends many, and each one pays for the ones
+ * before it.
+ *
+ * Quoting each leg independently is the flattering version — it prices every
+ * order as if it were first. This walks them in order and consumes the book as
+ * it goes, which is why the last leg usually looks nothing like the first.
+ *
+ * It assumes no refill between orders, which is the honest assumption over a
+ * short window: depth that has not been observed returning cannot be counted on.
+ */
+export function simulateOrders(
+  levels: readonly LadderLevel[],
+  oraclePrice: number,
+  sizes: readonly number[],
+  options: WalkOptions = {},
+): { fills: SimulatedFill[]; totalUsd: number; blendedGapPct: number } {
+  // A working copy: the caller's ladder is not consumed.
+  const remaining = levels.map((level) => ({ ...level }));
+  const fills: SimulatedFill[] = [];
+
+  let weightedGap = 0;
+  let totalUsd = 0;
+
+  for (const sizeUsd of sizes) {
+    if (!(sizeUsd > 0)) {
+      throw new RangeError("every simulated order needs a size greater than zero");
+    }
+
+    const depthBeforeUsd = remaining.reduce((sum, level) => sum + level.usd, 0);
+    const result = walkLadder(remaining, oraclePrice, sizeUsd, options);
+
+    // Consume what this order took, nearest bands first.
+    let toConsume = Math.min(sizeUsd, depthBeforeUsd);
+    for (const level of remaining) {
+      if (toConsume <= 0) break;
+      const taken = Math.min(toConsume, level.usd);
+      level.usd -= taken;
+      toConsume -= taken;
+    }
+
+    fills.push({
+      sizeUsd,
+      realizedPriceEst: result.realizedPriceEst,
+      exitGapPct: result.exitGapPct,
+      exceedsBook: result.exceedsBook,
+      depthBeforeUsd,
+      filledUsd: result.filledUsd,
+    });
+
+    weightedGap += result.exitGapPct * sizeUsd;
+    totalUsd += sizeUsd;
+  }
+
+  return {
+    fills,
+    totalUsd,
+    blendedGapPct: totalUsd > 0 ? weightedGap / totalUsd : 0,
+  };
+}
